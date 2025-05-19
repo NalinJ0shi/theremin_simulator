@@ -2,144 +2,194 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 
-// Particle system component
+// Cube particle system component
 function ParticleSystem({ isPlaying, mousePosition }) {
   const particlesCount = 500;
-  const positions = useRef(new Float32Array(particlesCount * 3));
-  const colors = useRef(new Float32Array(particlesCount * 3));
-  const sizes = useRef(new Float32Array(particlesCount));
+  const meshRef = useRef();
+  const dummy = useRef(new THREE.Object3D());
   const velocities = useRef([]);
-  const pointsRef = useRef();
+  const colors = useRef([]);
+  const sizes = useRef([]);
 
   // Initialize particles
   useEffect(() => {
-    // Initialize positions randomly
+    // Initialize velocities, colors and sizes
     for (let i = 0; i < particlesCount; i++) {
-      const i3 = i * 3;
+      // Initialize positions randomly
+      dummy.current.position.set(
+        (Math.random() - 0.5) * 10,
+        (Math.random() - 0.5) * 10,
+        (Math.random() - 0.5) * 10
+      );
       
-      // Random position within a sphere
-      positions.current[i3] = (Math.random() - 0.5) * 10;
-      positions.current[i3 + 1] = (Math.random() - 0.5) * 10;
-      positions.current[i3 + 2] = (Math.random() - 0.5) * 10;
+      // Random rotation
+      dummy.current.rotation.set(
+        Math.random() * Math.PI,
+        Math.random() * Math.PI,
+        Math.random() * Math.PI
+      );
       
-      // Initial colors (blue-ish)
-      colors.current[i3] = 0.1;
-      colors.current[i3 + 1] = 0.3;
-      colors.current[i3 + 2] = 0.8;
+      // Random scale (size)
+      const scale = Math.random() * 0.5 + 0.5;
+      dummy.current.scale.set(scale, scale, scale);
       
-      // Random sizes
-      sizes.current[i] = Math.random() * 0.5 + 0.5;
+      // Update the matrix
+      dummy.current.updateMatrix();
       
-      // Initialize velocities
+      // Set the matrix of instance i
+      meshRef.current.setMatrixAt(i, dummy.current.matrix);
+      
+      // Store initial velocities
       velocities.current[i] = {
-        x: (Math.random() - 0.5) * 0.01,
-        y: (Math.random() - 0.5) * 0.01,
-        z: (Math.random() - 0.5) * 0.01
+        x: (Math.random() - 0.5) * 0.003,
+        y: (Math.random() - 0.5) * 0.003,
+        z: (Math.random() - 0.5) * 0.003
       };
+      
+      // Store initial colors (blue-ish)
+      colors.current[i] = {
+        r: 0.1,
+        g: 0.3,
+        b: 0.8
+      };
+      
+      // Store initial sizes
+      sizes.current[i] = scale;
     }
+    
+    // Update the instance matrices
+    meshRef.current.instanceMatrix.needsUpdate = true;
+    
+    // Setup initial colors
+    const instanceColors = new Float32Array(particlesCount * 3);
+    for (let i = 0; i < particlesCount; i++) {
+      instanceColors[i * 3] = colors.current[i].r;
+      instanceColors[i * 3 + 1] = colors.current[i].g;
+      instanceColors[i * 3 + 2] = colors.current[i].b;
+    }
+    
+    meshRef.current.geometry.setAttribute(
+      'color',
+      new THREE.InstancedBufferAttribute(instanceColors, 3)
+    );
   }, []);
 
   // Animation loop
   useFrame(() => {
-    if (!pointsRef.current) return;
-    
-    const positions = pointsRef.current.geometry.attributes.position.array;
-    const colors = pointsRef.current.geometry.attributes.color.array;
-    const sizes = pointsRef.current.geometry.attributes.size.array;
+    if (!meshRef.current) return;
     
     // Active mouse position
     const mx = isPlaying ? (mousePosition.x - 0.5) * 10 : 0;
     const my = isPlaying ? (mousePosition.y - 0.5) * -10 : 0; // Invert Y
     
+    // Create new color buffer
+    const colors = meshRef.current.geometry.attributes.color.array;
+    
     for (let i = 0; i < particlesCount; i++) {
-      const i3 = i * 3;
+      // Get current matrix
+      meshRef.current.getMatrixAt(i, dummy.current.matrix);
+      // Decompose matrix to get position, rotation, scale
+      dummy.current.matrix.decompose(
+        dummy.current.position,
+        dummy.current.quaternion,
+        dummy.current.scale
+      );
       
       // Update position with velocity
-      positions[i3] += velocities.current[i].x;
-      positions[i3 + 1] += velocities.current[i].y;
-      positions[i3 + 2] += velocities.current[i].z;
+      dummy.current.position.x += velocities.current[i].x;
+      dummy.current.position.y += velocities.current[i].y;
+      dummy.current.position.z += velocities.current[i].z;
       
-      // Attract to center (0,0,0) to keep particles in view
-      const x = positions[i3];
-      const y = positions[i3 + 1];
-      const z = positions[i3 + 2];
+      // Slowly rotate the cubes
+      dummy.current.rotation.x += 0.001;
+      dummy.current.rotation.y += 0.001;
+      dummy.current.rotation.z += 0.001;
+      
+      // Get current position
+      const x = dummy.current.position.x;
+      const y = dummy.current.position.y;
+      const z = dummy.current.position.z;
       
       // Reset if too far away
       if (Math.sqrt(x*x + y*y + z*z) > 20) {
-        positions[i3] = (Math.random() - 0.5) * 5;
-        positions[i3 + 1] = (Math.random() - 0.5) * 5;
-        positions[i3 + 2] = (Math.random() - 0.5) * 5;
+        dummy.current.position.set(
+          (Math.random() - 0.5) * 5,
+          (Math.random() - 0.5) * 5,
+          (Math.random() - 0.5) * 5
+        );
       }
       
-      // Attraction to center
-      velocities.current[i].x -= x * 0.0005;
-      velocities.current[i].y -= y * 0.0005;
-      velocities.current[i].z -= z * 0.0005;
+      // Attraction to center (reduced force)
+      velocities.current[i].x -= x * 0.0002;
+      velocities.current[i].y -= y * 0.0002;
+      velocities.current[i].z -= z * 0.0002;
       
       // Attraction to mouse position when playing
       if (isPlaying) {
         const dx = mx - x;
         const dy = my - y;
         const dist = Math.sqrt(dx*dx + dy*dy) + 0.1;
-        const force = Math.min(0.01, 1 / (dist * dist));
+        const force = Math.min(0.004, 0.4 / (dist * dist));
         
         velocities.current[i].x += dx * force;
         velocities.current[i].y += dy * force;
         
         // Change color based on distance to mouse
-        colors[i3] = 0.5 + 0.5 * Math.sin(dist * 0.2);
-        colors[i3 + 1] = 0.2 + 0.3 * Math.cos(dist * 0.1);
-        colors[i3 + 2] = 0.5 + 0.5 * Math.sin(dist * 0.3);
+        const colorIndex = i * 3;
+        colors[colorIndex] = 0.5 + 0.5 * Math.sin(dist * 0.2);     // Red
+        colors[colorIndex + 1] = 0.2 + 0.3 * Math.cos(dist * 0.1); // Green
+        colors[colorIndex + 2] = 0.5 + 0.5 * Math.sin(dist * 0.3); // Blue
         
         // Change size based on distance
-        sizes[i] = Math.min(3, 1 + 3 / dist);
+        const newSize = Math.min(3, 1 + 3 / dist);
+        dummy.current.scale.set(newSize, newSize, newSize);
       } else {
         // Slowly return to original colors when not playing
-        colors[i3] = colors[i3] * 0.99 + 0.1 * 0.01;
-        colors[i3 + 1] = colors[i3 + 1] * 0.99 + 0.3 * 0.01;
-        colors[i3 + 2] = colors[i3 + 2] * 0.99 + 0.8 * 0.01;
+        const colorIndex = i * 3;
+        colors[colorIndex] = colors[colorIndex] * 0.99 + 0.1 * 0.01;     // Red
+        colors[colorIndex + 1] = colors[colorIndex + 1] * 0.99 + 0.3 * 0.01; // Green
+        colors[colorIndex + 2] = colors[colorIndex + 2] * 0.99 + 0.8 * 0.01; // Blue
         
         // Return to original size
-        sizes[i] = sizes[i] * 0.99 + (Math.random() * 0.5 + 0.5) * 0.01;
+        const originalSize = sizes.current[i];
+        dummy.current.scale.x = dummy.current.scale.x * 0.99 + originalSize * 0.01;
+        dummy.current.scale.y = dummy.current.scale.y * 0.99 + originalSize * 0.01;
+        dummy.current.scale.z = dummy.current.scale.z * 0.99 + originalSize * 0.01;
       }
+      
+      // Update the matrix
+      dummy.current.updateMatrix();
+      
+      // Set the matrix at index i
+      meshRef.current.setMatrixAt(i, dummy.current.matrix);
     }
     
-    pointsRef.current.geometry.attributes.position.needsUpdate = true;
-    pointsRef.current.geometry.attributes.color.needsUpdate = true;
-    pointsRef.current.geometry.attributes.size.needsUpdate = true;
+    // Update instance matrices and colors
+    meshRef.current.instanceMatrix.needsUpdate = true;
+    meshRef.current.geometry.attributes.color.needsUpdate = true;
   });
 
   return (
-    <points ref={pointsRef}>
-      <bufferGeometry>
-        <bufferAttribute
-          attach="attributes-position"
-          count={particlesCount}
-          array={positions.current}
-          itemSize={3}
-        />
-        <bufferAttribute
+    <instancedMesh
+      ref={meshRef}
+      args={[null, null, particlesCount]}
+    >
+      <boxGeometry args={[0.2, 0.2, 0.2]}>
+        <instancedBufferAttribute
           attach="attributes-color"
           count={particlesCount}
-          array={colors.current}
+          array={new Float32Array(particlesCount * 3)}
           itemSize={3}
         />
-        <bufferAttribute
-          attach="attributes-size"
-          count={particlesCount}
-          array={sizes.current}
-          itemSize={1}
-        />
-      </bufferGeometry>
-      <pointsMaterial
-        size={1}
-        sizeAttenuation={true}
+      </boxGeometry>
+      <meshPhongMaterial
         vertexColors={true}
         transparent={true}
-        alphaTest={0.01}
-        blending={THREE.AdditiveBlending}
+        opacity={0.8}
+        emissive="blue"
+        emissiveIntensity={0.5}
       />
-    </points>
+    </instancedMesh>
   );
 }
 
@@ -148,6 +198,7 @@ function Scene({ isPlaying, mousePosition }) {
   return (
     <>
       <ambientLight intensity={0.5} />
+      <directionalLight position={[10, 10, 10]} intensity={1} />
       <ParticleSystem isPlaying={isPlaying} mousePosition={mousePosition} />
     </>
   );
@@ -264,4 +315,3 @@ function App() {
 }
 
 export default App;
-
